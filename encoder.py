@@ -6,6 +6,7 @@ Author: Divyansh Khanna
 
 '''
 
+import os
 import gym
 import torch
 import pickle
@@ -21,7 +22,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--env', type=str)
 parser.add_argument('--epochs', type=int, default=50)
 parser.add_argument('--epochStep', type=int, default=10)
-parser.add_argument('--save-model', action='store_true')
+parser.add_argument('--save_model', action='store_true')
 args = parser.parse_args()
 
 env = gym.make(args.env)
@@ -85,5 +86,12 @@ for e in range(0, args.epochs+1):
         loss.backward()
         optimizer.step()
 
-        if e%args.epochStep == 0:
-            print('Train Epoch: {}/{}\t Loss: {:.3f}'.format(e, args.epochs, loss))
+    if e%args.epochStep == 0:
+        print('Train Epoch: {}/{}\t Loss: {:.3f}'.format(e, args.epochs, loss))
+
+if args.save_model:
+    filename = 'models/{}/inputs{}rolloutsize{}epochs{}.pkl'.format(args.env, NUM_OF_INPUTS, ROLLOUT_SIZE, args.epochs)
+    if not os.path.exists(os.path.dirname(filename)):
+        os.makedirs(os.path.dirname(filename))
+    with open(filename, 'wb') as f:
+        torch.save(model, f)
