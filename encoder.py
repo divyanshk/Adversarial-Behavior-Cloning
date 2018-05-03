@@ -22,6 +22,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--env', type=str)
 parser.add_argument('--epochs', type=int, default=50)
 parser.add_argument('--epochStep', type=int, default=10)
+parser.add_argument('--hidden_dim', type=int, default=32)
 parser.add_argument('--save_model', action='store_true')
 args = parser.parse_args()
 
@@ -34,13 +35,13 @@ NUM_OF_INPUTS = len(rollouts)
 ROLLOUT_SIZE = len(rollouts[0]['observations'])
 INPUT_SPACE_DIM = env.observation_space.shape[0]
 ACTION_SPACE_DIM = env.action_space.shape[0]
+HIDDEN_DIM = args.hidden_dim
 
 print("Number of rollouts are {}".format(NUM_OF_INPUTS))
 print("Size of rollouts are {}".format(ROLLOUT_SIZE))
 print("Input space dim is {}".format(INPUT_SPACE_DIM))
 print("Action space dim is {}".format(ACTION_SPACE_DIM))
-
-HIDDEN_DIM = 32
+print("Hidden dim is {}".format(HIDDEN_DIM))
 
 class LSTMEncoder(nn.Module):
 
@@ -54,7 +55,8 @@ class LSTMEncoder(nn.Module):
         self.lstm = nn.LSTM(input_dim, hidden_dim)
 
         self.hiddenToAction = nn.Linear(hidden_dim, numOfActions)
-
+        self.hidden = self.init_hidden()
+        
     def init_hidden(self):
         # The axes semantics are (num_layers, minibatch_size, hidden_dim)
         return (torch.zeros(1, 1, self.hidden_dim),
@@ -63,14 +65,14 @@ class LSTMEncoder(nn.Module):
     def forward(self, sequence):
         lstm_out, self.hidden = self.lstm(sequence.view(self.rollout_dim, 1, -1), self.hidden)
         action_scores = self.hiddenToAction(lstm_out.view(self.rollout_dim, -1))
-        return action_scores
+        return action_scores, self.hidden
 
 model = LSTMEncoder(INPUT_SPACE_DIM, HIDDEN_DIM, ACTION_SPACE_DIM, ROLLOUT_SIZE)
 loss_fn = nn.MSELoss()
 optimizer = optim.SGD(model.parameters(), lr=0.1)
 
 # set up the training
-for e in range(0, args.epochs+1):
+for e in range(1, args.epochs+1):
     for rollout in rollouts:
 
         model.zero_grad()
@@ -80,7 +82,7 @@ for e in range(0, args.epochs+1):
 
         model.hidden = model.init_hidden()
 
-        scores = model(data)
+        scores, _ = model(data)
 
         loss = loss_fn(scores, target)
         loss.backward()
