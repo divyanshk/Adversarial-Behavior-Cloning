@@ -7,7 +7,6 @@ Author: Divyansh Khanna
 '''
 
 import os
-import gym
 import torch
 import pickle
 import argparse
@@ -24,18 +23,18 @@ parser.add_argument('--epochs', type=int, default=50)
 parser.add_argument('--epochStep', type=int, default=10)
 parser.add_argument('--hidden_dim', type=int, default=32)
 parser.add_argument('--rollout_size', type=int, default=200)
-parser.add_argument('--save_model', action='store_true')
+parser.add_argument('--obs_shape', type=int, required=True)
+parser.add_argument('--action_shape', type=int, required=True)
+parser.add_argument('--save_model', type=bool, required=True, default=True)
 args = parser.parse_args()
-
-env = gym.make(args.env)
 
 with open('rollouts/'+args.env+'.pkl', 'rb') as f:
     rollouts = pickle.load(f)
 
 NUM_OF_INPUTS = len(rollouts)
-ROLLOUT_SIZE = max(args.rollout_size, len(rollouts[0]['observations']))
-INPUT_SPACE_DIM = env.observation_space.shape[0]
-ACTION_SPACE_DIM = env.action_space.shape[0]
+ROLLOUT_SIZE = min(args.rollout_size, len(rollouts[0]['observations']))
+INPUT_SPACE_DIM = args.obs_shape #env.observation_space.shape[0]
+ACTION_SPACE_DIM = args.action_shape#env.action_space.shape[0]
 HIDDEN_DIM = args.hidden_dim
 
 print("Number of rollouts are {}".format(NUM_OF_INPUTS))
@@ -127,8 +126,8 @@ for e in range(0, epochs+1):
         dec.zero_grad()
         disc.zero_grad()
 
-        data = Variable(torch.from_numpy(rollout['observations']).float().view(ROLLOUT_SIZE, 1, -1))
-        target = Variable(torch.from_numpy(rollout['actions']).float().view(ROLLOUT_SIZE, -1))
+        data = Variable(torch.from_numpy(rollout['observations'][:ROLLOUT_SIZE]).float().view(ROLLOUT_SIZE, 1, -1))
+        target = Variable(torch.from_numpy(rollout['actions'][:ROLLOUT_SIZE]).float().view(ROLLOUT_SIZE, -1))
 
         if isCuda:
             data, target = data.cuda(), target.cuda()

@@ -73,7 +73,7 @@ def main():
         print('std of return', np.std(returns))
 
         if (args.save == True):
-            with open('rollouts/'+args.envname, 'wb') as f:
+            with open('rollouts/'+args.envname+'.pkl', 'wb') as f:
                 pickle.dump(expert_data, f)
 
 if __name__ == '__main__':

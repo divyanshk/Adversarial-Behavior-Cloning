@@ -56,7 +56,7 @@ class LSTMEncoder(nn.Module):
 
         self.hiddenToAction = nn.Linear(hidden_dim, numOfActions)
         self.hidden = self.init_hidden()
-        
+
     def init_hidden(self):
         # The axes semantics are (num_layers, minibatch_size, hidden_dim)
         return (torch.zeros(1, 1, self.hidden_dim),
@@ -71,7 +71,7 @@ model = LSTMEncoder(INPUT_SPACE_DIM, HIDDEN_DIM, ACTION_SPACE_DIM, ROLLOUT_SIZE)
 loss_fn = nn.MSELoss()
 optimizer = optim.SGD(model.parameters(), lr=0.1)
 
-# set up the training
+# set up the training 
 for e in range(1, args.epochs+1):
     for rollout in rollouts:
 
