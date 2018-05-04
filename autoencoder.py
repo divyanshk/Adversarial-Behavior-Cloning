@@ -20,11 +20,11 @@ torch.manual_seed(1)
 parser = argparse.ArgumentParser()
 parser.add_argument('--env', type=str)
 parser.add_argument('--epochs', type=int, default=50)
-parser.add_argument('--epochStep', type=int, default=10)
+parser.add_argument('--epoch_step', type=int, default=10)
 parser.add_argument('--hidden_dim', type=int, default=32)
 parser.add_argument('--rollout_size', type=int, default=200)
 parser.add_argument('--obs_shape', type=int, required=True)
-parser.add_argument('--action_shape', type=int, required=True)
+parser.add_argument('--actions_shape', type=int, required=True)
 parser.add_argument('--save_model', type=bool, required=True, default=True)
 args = parser.parse_args()
 
@@ -34,7 +34,7 @@ with open('rollouts/'+args.env+'.pkl', 'rb') as f:
 NUM_OF_INPUTS = len(rollouts)
 ROLLOUT_SIZE = min(args.rollout_size, len(rollouts[0]['observations']))
 INPUT_SPACE_DIM = args.obs_shape #env.observation_space.shape[0]
-ACTION_SPACE_DIM = args.action_shape#env.action_space.shape[0]
+ACTION_SPACE_DIM = args.actions_shape#env.action_space.shape[0]
 HIDDEN_DIM = args.hidden_dim
 
 print("Number of rollouts are {}".format(NUM_OF_INPUTS))
@@ -44,7 +44,6 @@ print("Action space dim is {}".format(ACTION_SPACE_DIM))
 print("Hidden dim is {}".format(HIDDEN_DIM))
 
 lr = 1e-4
-epochs = 10000
 batch_size = 1
 latent_space_dim = HIDDEN_DIM
 isCuda = True if torch.cuda.is_available() else False
@@ -95,9 +94,9 @@ class LSTMDecoder(nn.Module):
         self.lstm = nn.LSTM(input_dim, hidden_dim)
 
         self.hiddenToAction = nn.Linear(hidden_dim, numOfActions)
-        # self.hidden = self.init_hidden()
+        self.hidden = self.init_hidden()
 
-    def init_hidden(self, hidden):
+    def init_hidden(self, hidden=None):
         # The axes semantics are (num_layers, minibatch_size, hidden_dim)
         return (hidden, torch.zeros(1, 1, self.hidden_dim))
 
@@ -118,9 +117,13 @@ optimizerE = optim.Adam(enc.parameters(), lr=lr) # enocder trying to learn from 
 optimizerAE = optim.Adam(list(enc.parameters()) + list(dec.parameters()), lr=lr) # autoencoder loss
 optimizerD = optim.Adam(disc.parameters(), lr=lr) # discriminator loss
 
-for e in range(0, epochs+1):
+for e in range(0, args.epochs+1):
 
     for rollout in rollouts:
+
+        # TODO: variable rollout size
+        if len(rollout['observations']) < ROLLOUT_SIZE:
+            continue
 
         enc.zero_grad()
         dec.zero_grad()
@@ -158,7 +161,7 @@ for e in range(0, epochs+1):
         enc_loss.backward()
         optimizerE.step()
 
-    if e%args.epochStep == 0:
+    if e%args.epoch_step == 0:
         print('Train Epoch: {}/{}\t AutoEncoder Loss: {:.3f}, AE Loss: {:.3f}, Encoder Loss: {:.3f}'.format(e, args.epochs, loss, (D_fake_loss+D_real_loss), enc_loss))
 
 if args.save_model:
@@ -166,7 +169,8 @@ if args.save_model:
     if not os.path.exists(os.path.dirname(filename)):
         os.makedirs(os.path.dirname(filename))
     with open(filename, 'wb') as f:
-        torch.save(dec.save_dict(), f) # save the decoder for generating rollouts
+        torch.save(dec.state_dict(), f) # save the decoder for generating rollouts
+    print('Model written to file '+filename)
 
 # TODO: is the AAE correct ?
 # TODO: generate rollouts
