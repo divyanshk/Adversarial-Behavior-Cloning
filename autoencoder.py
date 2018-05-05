@@ -46,7 +46,10 @@ print("Hidden dim is {}".format(HIDDEN_DIM))
 lr = 1e-4
 batch_size = 1
 latent_space_dim = HIDDEN_DIM
+#torch.backends.cudnn.enabled=False
 isCuda = True if torch.cuda.is_available() else False
+#isCuda = False
+print(isCuda)
 
 class Disc(nn.Module):
 
@@ -71,15 +74,26 @@ class LSTMEncoder(nn.Module):
         self.rollout_dim = rollout_dim
 
         self.lstm = nn.LSTM(input_dim, hidden_dim)
-        self.hidden = self.init_hidden()
+        self.init_hidden()
 
-    def init_hidden(self):
-        # The axes semantics are (num_layers, minibatch_size, hidden_dim)
-        return (torch.zeros(1, 1, self.hidden_dim),
-                torch.zeros(1, 1, self.hidden_dim))
+    def init_hidden(self,x=None):
+        if x==None:
+            self.hidden = (Variable(torch.zeros(1, 1, self.hidden_dim).cuda()),
+                Variable(torch.zeros(1, 1, self.hidden_dim).cuda()))
+        else:
+            self.hidden = (Variable(x[0].data.cuda()), Variable(x[1].data).cuda())
+
+    # def init_hidden(self, x=None):
+    #     # The axes semantics are (num_layers, minibatch_size, hidden_dim)
+    #     if x is None:
+    #         self.hidden = (torch.zeros(1, 1, self.hidden_dim),
+    #             torch.zeros(1, 1, self.hidden_dim))
+    #     else:
+    #         self.hidden = x
 
     def forward(self, sequence):
         lstm_out, self.hidden = self.lstm(sequence.view(self.rollout_dim, 1, -1), self.hidden)
+        self.init_hidden(self.hidden)
         return lstm_out, self.hidden
 
 class LSTMDecoder(nn.Module):
@@ -94,19 +108,19 @@ class LSTMDecoder(nn.Module):
         self.lstm = nn.LSTM(input_dim, hidden_dim)
 
         self.hiddenToAction = nn.Linear(hidden_dim, numOfActions)
-        self.hidden = self.init_hidden()
+        self.init_hidden()
 
-    def init_hidden(self, hidden=None):
-        # The axes semantics are (num_layers, minibatch_# gesize, hidden_dim)
-        if not hidden:
-            return (torch.zeros(1, 1, self.hidden_dim),
-                torch.zeros(1, 1, self.hidden_dim))
+    def init_hidden(self,x=None):
+        if x==None:
+            self.hidden = (Variable(torch.zeros(1, 1, self.hidden_dim).cuda()),
+                Variable(torch.zeros(1, 1, self.hidden_dim).cuda()))
         else:
-            return (hidden, torch.zeros(1, 1, self.hidden_dim))
+            self.hidden = (Variable(x[0].data.cuda()), Variable(x[1].data).cuda())
 
     def forward(self, sequence):
         lstm_out, self.hidden = self.lstm(sequence.view(self.rollout_dim, 1, -1), self.hidden)
         action_scores = self.hiddenToAction(lstm_out.view(self.rollout_dim, -1))
+        self.init_hidden(self.hidden)
         return action_scores, self.hidden
 
 enc = LSTMEncoder(INPUT_SPACE_DIM, HIDDEN_DIM, ACTION_SPACE_DIM, ROLLOUT_SIZE)
@@ -118,8 +132,8 @@ if isCuda:
     disc.cuda()
 
 optimizerE = optim.Adam(enc.parameters(), lr=lr) # enocder trying to learn from discriminator
-optimizerAE = optim.Adam(list(enc.parameters()) + list(dec.parameters()), lr=lr) # autoencoder loss
-optimizerD = optim.Adam(disc.parameters(), lr=lr) # discriminator loss
+optimizerD = optim.Adam(dec.parameters(), lr=lr) # autoencoder loss
+optimizerDisc = optim.Adam(disc.parameters(), lr=lr) # discriminator loss
 
 for e in range(0, args.epochs+1):
 
@@ -129,24 +143,43 @@ for e in range(0, args.epochs+1):
         if len(rollout['observations']) < ROLLOUT_SIZE:
             continue
 
+        enc.train()
+        dec.train()
+        disc.train()
+
         enc.zero_grad()
         dec.zero_grad()
         disc.zero_grad()
+
+        # enc.hidden = (Variable(enc.hidden[0].data, requires_grad=True), Variable(enc.hidden[1].data, requires_grad=True))
+        # dec.hidden = (Variable(dec.hidden[0].data, requires_grad=True), Variable(dec.hidden[1].data, requires_grad=True))
 
         data = Variable(torch.from_numpy(rollout['observations'][:ROLLOUT_SIZE]).float().view(ROLLOUT_SIZE, 1, -1))
         target = Variable(torch.from_numpy(rollout['actions'][:ROLLOUT_SIZE]).float().view(ROLLOUT_SIZE, -1))
 
         if isCuda:
             data, target = data.cuda(), target.cuda()
-        data, target = Variable(data.view(batch_size, -1)), Variable(target)
+        data, target = Variable(data), Variable(target)
 
-        optimizerAE.zero_grad()
-        _, (latent, _) = enc(data)
-        dec.hidden = dec.init_hidden(latent) # init the decoder with the hidden layer of encoder (latent tensor)
+        _, latent = enc(data)
+        # if isCuda:
+        #     latent = latent.cuda()
+        # latent = Variable(latent)
+        dec.init_hidden(latent) # init the decoder with the hidden layer of encoder (latent tensor)
         scores, _ = dec(data)
-        loss = F.mse_loss(scores, target)
-        loss.backward(retain_graph=True)
-        optimizerAE.step()
+        # if isCuda:
+        #     scores = scores.cuda()
+        # scores = Variable(scores)
+        recon_loss = F.mse_loss(scores, target)
+        recon_loss.backward(retain_graph=True)
+        optimizerE.step()
+        optimizerD.step()
+
+        # print(enc.hidden[0])
+        # print(dec.hidden[0])
+        # for name, param in enc.named_parameters():
+        #     if param.requires_grad:
+        #         print(name, param.data)
 
         trueLabel = torch.ones(batch_size, 1)
         falseLabel = torch.zeros(batch_size, 1)
@@ -155,18 +188,22 @@ for e in range(0, args.epochs+1):
             trueLabel, falseLabel, trueSample = trueLabel.cuda(), falseLabel.cuda(), trueSample.cuda()
         trueLabel, falseLabel, trueSample = Variable(trueLabel), Variable(falseLabel), Variable(trueSample)
 
-        D_real_loss = F.binary_cross_entropy(disc(trueSample), trueLabel)
-        D_real_loss.backward()
-        D_fake_loss = F.binary_cross_entropy(disc(latent.detach()), falseLabel)
-        D_fake_loss.backward()
-        optimizerD.step()
+        # enc.eval()
+        Disc_real_loss = F.binary_cross_entropy(disc(trueSample), trueLabel)
+        _, (latent, _) = enc(data)
+        Disc_fake_loss = F.binary_cross_entropy(disc(latent.detach()), falseLabel)
+        Disc_loss = Disc_real_loss + Disc_fake_loss
+        Disc_loss.backward()
+        optimizerDisc.step()
 
-        enc_loss = F.binary_cross_entropy(disc(latent.detach()), trueLabel)
+        # enc.train()
+        _, (latent, _) = enc(data)
+        enc_loss = F.binary_cross_entropy(disc(latent), trueLabel)
         enc_loss.backward()
         optimizerE.step()
 
     if e%args.epoch_step == 0:
-        print('Train Epoch: {}/{}\t AutoEncoder Loss: {:.3f}, AE Loss: {:.3f}, Encoder Loss: {:.3f}'.format(e, args.epochs, loss, (D_fake_loss+D_real_loss), enc_loss))
+        print('Train Epoch: {}/{}\t Reconstruction Loss: {:.3f}, Discriminator Loss: {:.3f}, Encoder Loss: {:.3f}'.format(e, args.epochs, recon_loss, Disc_loss, enc_loss))
 
 if args.save_model:
     filename = 'AAEmodels/{}/inputs{}rolloutsize{}epochs{}.pkl'.format(args.env, NUM_OF_INPUTS, ROLLOUT_SIZE, args.epochs)
