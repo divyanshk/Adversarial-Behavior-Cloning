@@ -81,7 +81,7 @@ class LSTMEncoder(nn.Module):
             self.hidden = (Variable(torch.zeros(1, 1, self.hidden_dim).cuda()),
                 Variable(torch.zeros(1, 1, self.hidden_dim).cuda()))
         else:
-            self.hidden = (Variable(x[0].data.cuda()), Variable(x[1].data).cuda())
+            self.hidden = (Variable(x[0].data.cuda()), Variable(x[1].data.cuda()))
 
     # def init_hidden(self, x=None):
     #     # The axes semantics are (num_layers, minibatch_size, hidden_dim)
@@ -135,8 +135,10 @@ optimizerE = optim.Adam(enc.parameters(), lr=lr) # enocder trying to learn from 
 optimizerD = optim.Adam(dec.parameters(), lr=lr) # autoencoder loss
 optimizerDisc = optim.Adam(disc.parameters(), lr=lr) # discriminator loss
 
+lossPerEpoch = []
 for e in range(0, args.epochs+1):
 
+    losses = []
     for rollout in rollouts:
 
         # TODO: variable rollout size
@@ -154,8 +156,8 @@ for e in range(0, args.epochs+1):
         # enc.hidden = (Variable(enc.hidden[0].data, requires_grad=True), Variable(enc.hidden[1].data, requires_grad=True))
         # dec.hidden = (Variable(dec.hidden[0].data, requires_grad=True), Variable(dec.hidden[1].data, requires_grad=True))
 
-        data = Variable(torch.from_numpy(rollout['observations'][:ROLLOUT_SIZE]).float().view(ROLLOUT_SIZE, 1, -1))
-        target = Variable(torch.from_numpy(rollout['actions'][:ROLLOUT_SIZE]).float().view(ROLLOUT_SIZE, -1))
+        data = torch.from_numpy(rollout['observations'][:ROLLOUT_SIZE]).float().view(ROLLOUT_SIZE, 1, -1)
+        target = torch.from_numpy(rollout['actions'][:ROLLOUT_SIZE]).float().view(ROLLOUT_SIZE, -1)
 
         if isCuda:
             data, target = data.cuda(), target.cuda()
@@ -202,8 +204,12 @@ for e in range(0, args.epochs+1):
         enc_loss.backward()
         optimizerE.step()
 
+        losses.append(recon_loss)
+
+    lossPerEpoch.append(sum(losses)/len(losses))
+
     if e%args.epoch_step == 0:
-        print('Train Epoch: {}/{}\t Reconstruction Loss: {:.3f}, Discriminator Loss: {:.3f}, Encoder Loss: {:.3f}'.format(e, args.epochs, recon_loss, Disc_loss, enc_loss))
+        print('Train Epoch: {}/{}\t Reconstruction Loss: {:.5f}, Discriminator Loss: {:.5f}, Encoder Loss: {:.5f}'.format(e, args.epochs, recon_loss, Disc_loss, enc_loss))
 
 if args.save_model:
     filename = 'AAEmodels/{}/inputs{}rolloutsize{}epochs{}.pkl'.format(args.env, NUM_OF_INPUTS, ROLLOUT_SIZE, args.epochs)
@@ -212,6 +218,13 @@ if args.save_model:
     with open(filename, 'wb') as f:
         torch.save(dec.state_dict(), f) # save the decoder for generating rollouts
     print('Model written to file '+filename)
+
+    filename = 'AAEmodels/Loss/{}/inputs{}rolloutsize{}epochs{}.pkl'.format(args.env, NUM_OF_INPUTS, ROLLOUT_SIZE, args.epochs)
+    if not os.path.exists(os.path.dirname(filename)):
+        os.makedirs(os.path.dirname(filename))
+    with open(filename, 'wb') as f:
+        torch.save(lossPerEpoch, f) # save the decoder for generating rollouts
+    print('Loss written to file '+filename)
 
 # TODO: is the AAE correct ?
 # TODO: generate rollouts
