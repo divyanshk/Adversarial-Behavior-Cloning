@@ -19,6 +19,7 @@ torch.manual_seed(1)
 parser = argparse.ArgumentParser()
 parser.add_argument('--env', type=str)
 parser.add_argument('--file', type=str)
+parser.add_argument('--folder', type=str)
 parser.add_argument('--hidden_dim', type=int, default=32)
 parser.add_argument('--rollout_size', type=int, required=True)
 args = parser.parse_args()
@@ -59,7 +60,7 @@ class LSTMDecoder(nn.Module):
 
 policy = LSTMDecoder(INPUT_SPACE_DIM, HIDDEN_DIM, ACTION_SPACE_DIM, ROLLOUT_SIZE)
 
-with open('AAEmodels/{}/{}'.format(args.env, args.file), 'rb') as f:
+with open('{}/{}/{}'.format(args.folder, args.env, args.file), 'rb') as f:
     policy.load_state_dict(torch.load(f, map_location=lambda storage, loc: storage))
 
 # generate rollout(s) -> Start with a state, the action leads to the next state
@@ -84,4 +85,3 @@ while not done:
         steps += 1
         if steps > args.rollout_size:
             break
-
