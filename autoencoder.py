@@ -97,8 +97,12 @@ class LSTMDecoder(nn.Module):
         self.hidden = self.init_hidden()
 
     def init_hidden(self, hidden=None):
-        # The axes semantics are (num_layers, minibatch_size, hidden_dim)
-        return (hidden, torch.zeros(1, 1, self.hidden_dim))
+        # The axes semantics are (num_layers, minibatch_# gesize, hidden_dim)
+        if not hidden:
+            return (torch.zeros(1, 1, self.hidden_dim),
+                torch.zeros(1, 1, self.hidden_dim))
+        else:
+            return (hidden, torch.zeros(1, 1, self.hidden_dim))
 
     def forward(self, sequence):
         lstm_out, self.hidden = self.lstm(sequence.view(self.rollout_dim, 1, -1), self.hidden)

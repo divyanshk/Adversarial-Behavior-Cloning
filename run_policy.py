@@ -60,9 +60,14 @@ class LSTMDecoder(nn.Module):
 policy = LSTMDecoder(INPUT_SPACE_DIM, HIDDEN_DIM, ACTION_SPACE_DIM, ROLLOUT_SIZE)
 
 with open('AAEmodels/{}/{}'.format(args.env, args.file), 'rb') as f:
-    policy.load_state_dict(torch.load(f))
+    policy.load_state_dict(torch.load(f, map_location=lambda storage, loc: storage))
 
 # generate rollout(s) -> Start with a state, the action leads to the next state
+
+policy.eval()
+
+# for parameter in policy.parameters():
+#     print(parameter)
 
 obs = env.reset()
 done = False
