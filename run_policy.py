@@ -20,6 +20,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--env', type=str)
 parser.add_argument('--file', type=str)
 parser.add_argument('--folder', type=str)
+parser.add_argument('--num_of_rollouts', type=int, default=1)
 parser.add_argument('--hidden_dim', type=int, default=32)
 parser.add_argument('--rollout_size', type=int, required=True)
 args = parser.parse_args()
@@ -70,18 +71,19 @@ policy.eval()
 # for parameter in policy.parameters():
 #     print(parameter)
 
-obs = env.reset()
-done = False
-actions = []
-steps = 0
-while not done:
-    # taking one input step at a time
-    with torch.no_grad():
-        out, _ = policy.lstm(torch.FloatTensor(obs).view(1,1,-1), policy.hidden)
-        action = policy.hiddenToAction(out.view(1, -1))
-        obs, r, done, _ = env.step(action)
-        actions.append(actions)
-        env.render()
-        steps += 1
-        if steps > args.rollout_size:
-            break
+for _ in range(args.num_of_rollouts):
+    obs = env.reset()
+    done = False
+    actions = []
+    steps = 0
+    while not done:
+        # taking one input step at a time
+        with torch.no_grad():
+            out, policy.hidden = policy.lstm(torch.FloatTensor(obs).view(1,1,-1), policy.hidden)
+            action = policy.hiddenToAction(out.view(1, -1))
+            obs, r, done, _ = env.step(action)
+            actions.append(actions)
+            env.render()
+            steps += 1
+            if steps > args.rollout_size:
+                break
