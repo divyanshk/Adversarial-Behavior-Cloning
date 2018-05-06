@@ -77,11 +77,18 @@ class LSTMEncoder(nn.Module):
         self.init_hidden()
 
     def init_hidden(self,x=None):
-        if x==None:
-            self.hidden = (Variable(torch.zeros(1, 1, self.hidden_dim).cuda()),
-                Variable(torch.zeros(1, 1, self.hidden_dim).cuda()))
+        if isCuda:
+            if x==None:
+                self.hidden = (Variable(torch.zeros(1, 1, self.hidden_dim).cuda()),
+                    Variable(torch.zeros(1, 1, self.hidden_dim).cuda()))
+            else:
+                self.hidden = (Variable(x[0].data.cuda()), Variable(x[1].data.cuda()))
         else:
-            self.hidden = (Variable(x[0].data.cuda()), Variable(x[1].data.cuda()))
+            if x==None:
+                self.hidden = (Variable(torch.zeros(1, 1, self.hidden_dim)),
+                    Variable(torch.zeros(1, 1, self.hidden_dim)))
+            else:
+                self.hidden = (Variable(x[0].data), Variable(x[1].data))
 
     # def init_hidden(self, x=None):
     #     # The axes semantics are (num_layers, minibatch_size, hidden_dim)
@@ -111,11 +118,18 @@ class LSTMDecoder(nn.Module):
         self.init_hidden()
 
     def init_hidden(self,x=None):
-        if x==None:
-            self.hidden = (Variable(torch.zeros(1, 1, self.hidden_dim).cuda()),
-                Variable(torch.zeros(1, 1, self.hidden_dim).cuda()))
+        if isCuda:
+            if x==None:
+                self.hidden = (Variable(torch.zeros(1, 1, self.hidden_dim).cuda()),
+                    Variable(torch.zeros(1, 1, self.hidden_dim).cuda()))
+            else:
+                self.hidden = (Variable(x[0].data.cuda()), Variable(x[1].data.cuda()))
         else:
-            self.hidden = (Variable(x[0].data.cuda()), Variable(x[1].data).cuda())
+            if x==None:
+                self.hidden = (Variable(torch.zeros(1, 1, self.hidden_dim)),
+                    Variable(torch.zeros(1, 1, self.hidden_dim)))
+            else:
+                self.hidden = (Variable(x[0].data), Variable(x[1].data))
 
     def forward(self, sequence):
         lstm_out, self.hidden = self.lstm(sequence.view(self.rollout_dim, 1, -1), self.hidden)
@@ -173,7 +187,7 @@ for e in range(0, args.epochs+1):
         #     scores = scores.cuda()
         # scores = Variable(scores)
         recon_loss = F.mse_loss(scores, target)
-        recon_loss.backward(retain_graph=True)
+        recon_loss.backward(retain_graph=False)
         optimizerE.step()
         optimizerD.step()
 
