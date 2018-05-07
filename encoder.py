@@ -108,7 +108,7 @@ for e in range(1, args.epochs+1):
         loss.backward()
         optimizer.step()
         
-        losses.append(recon_loss)
+        losses.append(loss)
 
     lossPerEpoch.append(sum(losses)/len(losses))
 

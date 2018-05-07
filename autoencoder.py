@@ -90,14 +90,6 @@ class LSTMEncoder(nn.Module):
             else:
                 self.hidden = (Variable(x[0].data), Variable(x[1].data))
 
-    # def init_hidden(self, x=None):
-    #     # The axes semantics are (num_layers, minibatch_size, hidden_dim)
-    #     if x is None:
-    #         self.hidden = (torch.zeros(1, 1, self.hidden_dim),
-    #             torch.zeros(1, 1, self.hidden_dim))
-    #     else:
-    #         self.hidden = x
-
     def forward(self, sequence):
         lstm_out, self.hidden = self.lstm(sequence.view(self.rollout_dim, 1, -1), self.hidden)
         self.init_hidden(self.hidden)
@@ -152,10 +144,8 @@ optimizerDisc = optim.Adam(disc.parameters(), lr=lr) # discriminator loss
 lossPerEpoch = []
 for e in range(0, args.epochs+1):
 
-    losses = []
     for rollout in rollouts:
 
-        # TODO: variable rollout size
         if len(rollout['observations']) < ROLLOUT_SIZE:
             continue
 
@@ -167,9 +157,6 @@ for e in range(0, args.epochs+1):
         dec.zero_grad()
         disc.zero_grad()
 
-        # enc.hidden = (Variable(enc.hidden[0].data, requires_grad=True), Variable(enc.hidden[1].data, requires_grad=True))
-        # dec.hidden = (Variable(dec.hidden[0].data, requires_grad=True), Variable(dec.hidden[1].data, requires_grad=True))
-
         data = torch.from_numpy(rollout['observations'][:ROLLOUT_SIZE]).float().view(ROLLOUT_SIZE, 1, -1)
         target = torch.from_numpy(rollout['actions'][:ROLLOUT_SIZE]).float().view(ROLLOUT_SIZE, -1)
 
@@ -178,24 +165,14 @@ for e in range(0, args.epochs+1):
         data, target = Variable(data), Variable(target)
 
         _, latent = enc(data)
-        # if isCuda:
-        #     latent = latent.cuda()
-        # latent = Variable(latent)
+        
         dec.init_hidden(latent) # init the decoder with the hidden layer of encoder (latent tensor)
         scores, _ = dec(data)
-        # if isCuda:
-        #     scores = scores.cuda()
-        # scores = Variable(scores)
+        
         recon_loss = F.mse_loss(scores, target)
         recon_loss.backward(retain_graph=False)
         optimizerE.step()
         optimizerD.step()
-
-        # print(enc.hidden[0])
-        # print(dec.hidden[0])
-        # for name, param in enc.named_parameters():
-        #     if param.requires_grad:
-        #         print(name, param.data)
 
         trueLabel = torch.ones(batch_size, 1)
         falseLabel = torch.zeros(batch_size, 1)
@@ -204,7 +181,6 @@ for e in range(0, args.epochs+1):
             trueLabel, falseLabel, trueSample = trueLabel.cuda(), falseLabel.cuda(), trueSample.cuda()
         trueLabel, falseLabel, trueSample = Variable(trueLabel), Variable(falseLabel), Variable(trueSample)
 
-        # enc.eval()
         Disc_real_loss = F.binary_cross_entropy(disc(trueSample), trueLabel)
         _, (latent, _) = enc(data)
         Disc_fake_loss = F.binary_cross_entropy(disc(latent.detach()), falseLabel)
@@ -212,15 +188,12 @@ for e in range(0, args.epochs+1):
         Disc_loss.backward()
         optimizerDisc.step()
 
-        # enc.train()
         _, (latent, _) = enc(data)
         enc_loss = F.binary_cross_entropy(disc(latent), trueLabel)
         enc_loss.backward()
         optimizerE.step()
 
-        losses.append(recon_loss)
-
-    lossPerEpoch.append(sum(losses)/len(losses))
+    lossPerEpoch.append(recon_loss.data.cpu().numpy())
 
     if e%args.epoch_step == 0:
         print('Train Epoch: {}/{}\t Reconstruction Loss: {:.5f}, Discriminator Loss: {:.5f}, Encoder Loss: {:.5f}'.format(e, args.epochs, recon_loss, Disc_loss, enc_loss))
@@ -237,9 +210,5 @@ if args.save_model:
     if not os.path.exists(os.path.dirname(filename)):
         os.makedirs(os.path.dirname(filename))
     with open(filename, 'wb') as f:
-        torch.save(lossPerEpoch, f) # save the decoder for generating rollouts
+        pickle.dump(lossPerEpoch, f) # save the losses
     print('Loss written to file '+filename)
-
-# TODO: is the AAE correct ?
-# TODO: generate rollouts
-# TODO: pretraining using supervised learning on the encoder
